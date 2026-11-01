@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<title>Verificação — Vital Apex</title>
+<style>body{font:15px/1.8 monospace;margin:32px;color:#123b4a;background:#f5f3ee}iframe{width:390px;height:700px;border:1px solid #b7c9be}pre{white-space:pre-wrap}</style>
+<h1>Verificação funcional</h1><pre id="output">Executando…</pre><iframe src="index.html" title="Site em teste"></iframe>
+<script>
+const frame = document.querySelector('iframe');
+const output = document.querySelector('#output');
+frame.addEventListener('load', async () => {
+  const passed = [];
+  function check(condition, message) {
+    if (!condition) throw new Error(message);
+    passed.push('OK · ' + message);
+  }
+  try {
+    const doc = frame.contentDocument;
+    await doc.fonts.ready;
+    await Promise.all([...doc.images].map(image => { image.loading = 'eager'; return image.decode(); }));
+    check([...doc.images].every(image => image.naturalWidth > 0), 'Todas as imagens carregam');
+    for (const width of [320, 390, 768, 1280]) {
+      frame.style.width = width + 'px';
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      check(doc.documentElement.scrollWidth <= doc.documentElement.clientWidth, 'Sem rolagem horizontal em ' + width + 'px');
+    }
+    frame.style.width = '390px';
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    for (const link of doc.querySelectorAll('a[href^="#"]')) check(doc.querySelector(link.getAttribute('href')), 'Destino existe: ' + link.getAttribute('href'));
+    const menu = doc.querySelector('.menu-toggle');
+    menu.click();
+    check(menu.getAttribute('aria-expanded') === 'true', 'Menu móvel abre');
+    doc.querySelector('nav a').click();
+    check(menu.getAttribute('aria-expanded') === 'false', 'Navegação fecha menu móvel');
+    const booking = doc.querySelector('#booking-dialog');
+    const detail = doc.querySelector('#specialty-dialog');
+    for (const button of doc.querySelectorAll('[data-specialty]')) {
+      button.click();
+      check(detail.open && doc.querySelector('#detail-title').textContent.length > 0, 'Especialidade abre: ' + button.dataset.specialty);
+      doc.querySelector('#detail-book').click();
+      check(!detail.open && booking.open && doc.querySelector('#specialty').value === button.dataset.specialty, 'Especialidade preservada no agendamento');
+      booking.close();
+    }
+    doc.querySelector('[data-book]').click();
+    const form = doc.querySelector('#booking-form');
+    check(booking.open && !form.checkValidity(), 'Formulário exige escolhas');
+    doc.querySelector('#specialty').value = 'nutricao';
+    doc.querySelector('#period').value = 'Manhã';
+    form.requestSubmit();
+    const result = doc.querySelector('#booking-result');
+    check(form.hidden && !result.hidden && result.textContent.includes('Nutrição individualizada · Manhã'), 'Simulação mostra escolhas corretas');
+    check(result.textContent.includes('nenhum horário foi reservado'), 'Simulação não promete reserva real');
+    result.querySelector('button').click();
+    check(!form.hidden && result.hidden, 'Nova simulação restaura formulário');
+    booking.querySelector('.dialog-close').click();
+    check(!booking.open, 'Botão fecha diálogo');
+    doc.querySelector('#privacy-button').click();
+    check(doc.querySelector('#privacy-dialog').open, 'Privacidade abre');
+    const privacy = doc.querySelector('#privacy-dialog');
+    const closed = new Promise(resolve => privacy.addEventListener('close', resolve, { once: true }));
+    privacy.close();
+    await closed;
+    check(!doc.body.classList.contains('dialog-open'), 'Rolagem restaurada após fechar diálogos');
+    output.textContent = passed.join('\n') + '\n\nPASSOU · ' + passed.length + ' verificações';
+  } catch (error) {
+    output.textContent = passed.join('\n') + '\n\nFALHOU · ' + error.message;
+    output.style.color = '#a33b2f';
+  }
+});
+</script>
+</html>
